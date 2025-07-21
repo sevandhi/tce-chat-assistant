@@ -1,0 +1,12 @@
+altair
+pandas
+streamlit
+langchain>=0.1.13
+langchain-community>=0.0.20
+langchain-google-genai>=0.0.6
+langchain-pinecone>=0.0.3
+pinecone-client>=3.0.0
+python-dotenv>=1.0.0
+sentence-transformers>=2.2.2
+langchain-huggingface
+sentence-transformers
