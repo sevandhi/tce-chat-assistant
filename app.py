@@ -1,4 +1,4 @@
-# chat_app.py
+
 import os
 import streamlit as st
 from dotenv import load_dotenv
@@ -10,22 +10,21 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 
-# Load environment variables
+
 load_dotenv()
 
-# --- Configuration ---
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 INDEX_NAME = "tce-website-data"
 PINECONE_REGION = "us-west-2"
 
-# --- Validate API Keys ---
+
 if not all([PINECONE_API_KEY, GOOGLE_API_KEY]):
     st.error("Please set PINECONE_API_KEY and GOOGLE_API_KEY in your environment variables.")
     st.stop()
 
-# --- Custom CSS for background
-#  and chat avatars ---
+# --- Custom CSS for background not workingg
+-
 st.markdown("""
     <style>
         [data-testid="stAppViewContainer"] {
@@ -55,7 +54,7 @@ def get_vectorstore_and_llm():
 vectorstore, llm = get_vectorstore_and_llm()
 retriever = vectorstore.as_retriever()
 
-# --- Prompt ---
+
 prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a helpful assistant for Thiagarajar College of Engineering (TCE) created by IT student Akash BS. Answer the user's question based only on the provided context. If you cannot find the answer in the context, state that you don't have enough information. Always cite the source URL(s) from where you found the information, formatted as a Markdown link."),
     ("human", "Context: {context}\nQuestion: {input}")
@@ -64,21 +63,21 @@ prompt = ChatPromptTemplate.from_messages([
 document_chain = create_stuff_documents_chain(llm, prompt)
 retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-# --- Streamlit UI ---
+
 st.set_page_config(page_title="TCE Chat Assistant", page_icon="🎓")
 st.title(" TCE Chat Assistant ")
 st.markdown("Ask me anything about Thiagarajar College of Engineering!")
 
-# --- Session State for Messages ---
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- Show previous messages ---
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar="user.png" if message["role"] == "user" else "tcelogo.png"):
         st.markdown(message["content"])
 
-# --- Chat Input ---
+
 if prompt_input := st.chat_input("What do you want to know about TCE?"):
     st.session_state.messages.append({"role": "user", "content": prompt_input})
     with st.chat_message("user", avatar="user.png"):
