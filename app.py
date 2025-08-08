@@ -24,7 +24,7 @@ if not all([PINECONE_API_KEY, GOOGLE_API_KEY]):
     st.stop()
 
 # --- Custom CSS for background not workingg
--
+
 st.markdown("""
     <style>
         [data-testid="stAppViewContainer"] {
@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Load Vectorstore and LLM ---
+# --- Load Vectorstore and LLM -
 @st.cache_resource
 def get_vectorstore_and_llm():
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
