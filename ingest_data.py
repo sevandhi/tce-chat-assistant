@@ -13,7 +13,7 @@ load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 HUGGINGFACEHUB_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 INDEX_NAME = "tce-website-data"
-PINECONE_REGION = "us-west-2"
+PINECONE_REGION = "us-east-1"
 
 if not PINECONE_API_KEY:
     raise ValueError("PINECONE_API_KEY must be set in environment variables.")
