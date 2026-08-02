@@ -122,9 +122,7 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ---
 
-## 👤 Author
 
-Created by **Akash BS**, IT student at Thiagarajar College of Engineering.
 
 ---
 
