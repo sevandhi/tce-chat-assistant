@@ -1,6 +1,6 @@
 import os
 import base64
-import streamlit as st
+import gradio as gr
 from dotenv import load_dotenv
 from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
@@ -10,85 +10,20 @@ from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-# --- set_page_config MUST be the first Streamlit command ---
-st.set_page_config(page_title="TCE Chat Assistant", page_icon="🎓")
-
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 INDEX_NAME = "tce-website-data"
-PINECONE_REGION = "us-east-1"
 
 if not all([PINECONE_API_KEY, GOOGLE_API_KEY]):
-    st.error("Please set PINECONE_API_KEY and GOOGLE_API_KEY in your environment variables.")
-    st.stop()
+    raise ValueError("Please set PINECONE_API_KEY and GOOGLE_API_KEY as environment variables / Space secrets.")
 
-# --- Custom CSS for background (fixed with base64) ---
-def get_base64_image(image_path):
-    with open(image_path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+# --- Load Vectorstore and LLM (runs once at startup) ---
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+pc = Pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index(INDEX_NAME)
+vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
+llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=GOOGLE_API_KEY, temperature=0.0)
 
-bg_image = get_base64_image("bg.jpg")
-
-st.markdown(f"""
-    <style>
-        [data-testid="stAppViewContainer"] {{
-            background-image: url("data:image/png;base64,{bg_image}");
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }}
-        .stChatMessage > img {{
-            border-radius: 50%;
-            width: 36px;
-            height: 36px;
-            object-fit: cover;
-        }}
-        h1 {{
-            font-weight: 800 !important;
-            font-size: 3.2rem !important;
-            color: #FFFFFF !important;
-            text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
-            background-color: rgba(0,0,0,0.35);
-            padding: 12px 20px;
-            border-radius: 8px;
-            display: inline-block;
-        }}
-        [data-testid="stMarkdownContainer"] p {{
-            font-weight: 600;
-            font-size: 1.4rem !important;
-            color: #FFFFFF !important;
-            text-shadow: 1px 1px 4px rgba(0,0,0,0.8);
-        }}
-        [data-testid="stChatMessage"] {{
-            background-color: rgba(0, 0, 0, 0.55) !important;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 10px;
-        }}
-        [data-testid="stChatMessage"] li {{
-            color: #FFFFFF !important;
-            font-weight: 500;
-            font-size: 1.2rem !important;
-            text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
-        }}
-        [data-testid="stChatMessage"] strong {{
-            color: #FFD700 !important;
-        }}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- Load Vectorstore and LLM ---
-@st.cache_resource
-def get_vectorstore_and_llm():
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index(INDEX_NAME)
-    vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
-    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=GOOGLE_API_KEY, temperature=0.0)
-    return vectorstore, llm
-
-vectorstore, llm = get_vectorstore_and_llm()
 retriever = vectorstore.as_retriever(search_kwargs={"k": 8})
 
 prompt = ChatPromptTemplate.from_messages([
@@ -108,42 +43,95 @@ def extract_text(content):
         )
     return content
 
-st.title(" TCE Chat Assistant ")
-st.markdown("Ask me anything about Thiagarajar College of Engineering!")
+# --- Core chat logic (used by Gradio's ChatInterface) ---
+def respond(message, history):
+    try:
+        source_documents = retriever.invoke(message)
+        context_text = format_docs(source_documents)
+        formatted_prompt = prompt.format_messages(context=context_text, input=message)
+        llm_response = llm.invoke(formatted_prompt)
+        assistant_response = extract_text(llm_response.content)
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+        unique_sources = {doc.metadata['source'] for doc in source_documents if 'source' in doc.metadata}
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"], avatar="user.png" if message["role"] == "user" else "tcelogo.png"):
-        st.markdown(message["content"])
+        citations_text = ""
+        if unique_sources:
+            citations_text = "\n\n**Sources:**\n" + "\n".join([f"- [{url}]({url})" for url in sorted(unique_sources)])
 
-if prompt_input := st.chat_input("What do you want to know about TCE?"):
-    st.session_state.messages.append({"role": "user", "content": prompt_input})
-    with st.chat_message("user", avatar="user.png"):
-        st.markdown(prompt_input)
+        return assistant_response + citations_text
+    except Exception as e:
+        return f"An error occurred: {e}"
 
-    with st.chat_message("assistant", avatar="tcelogo.png"):
-        with st.spinner("Thinking..."):
-            try:
-                source_documents = retriever.invoke(prompt_input)
-                context_text = format_docs(source_documents)
-                formatted_prompt = prompt.format_messages(context=context_text, input=prompt_input)
-                llm_response = llm.invoke(formatted_prompt)
-                assistant_response = extract_text(llm_response.content)
+# --- Custom CSS for background + styling ---
+def get_base64_image(image_path):
+    with open(image_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-                unique_sources = {doc.metadata['source'] for doc in source_documents if 'source' in doc.metadata}
+try:
+    bg_image = get_base64_image("bg.jpg")
+    bg_css = f"""
+        .gradio-container {{
+            background-image: url("data:image/jpeg;base64,{bg_image}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+    """
+except FileNotFoundError:
+    bg_css = ""
 
-                citations_text = ""
-                if unique_sources:
-                    citations_text = "\n\n**Sources:**\n" + "\n".join([f"- [{url}]({url})" for url in sorted(unique_sources)])
+custom_css = bg_css + """
+    #title-block {
+        background-color: rgba(0,0,0,0.5);
+        padding: 16px 20px;
+        border-radius: 10px;
+        display: inline-block;
+    }
+    #title-block h1 {
+        color: #FFFFFF !important;
+        font-weight: 800 !important;
+        font-size: 2.4rem !important;
+        text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+        margin: 0;
+    }
+    #title-block p {
+        color: #FFFFFF !important;
+        font-weight: 600;
+        font-size: 1.1rem !important;
+        text-shadow: 1px 1px 4px rgba(0,0,0,0.8);
+        margin: 4px 0 0 0;
+    }
+    .message-wrap {
+        background-color: rgba(0, 0, 0, 0.55) !important;
+        border-radius: 12px;
+    }
+    .message-wrap strong {
+        color: #FFD700 !important;
+    }
+"""
 
-                full_response = assistant_response + citations_text
-                st.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": "Sorry, I couldn't process that request. Please try again."
-                })
+# --- Build the Gradio app ---
+with gr.Blocks(css=custom_css, title="TCE Chat Assistant") as demo:
+    gr.HTML(
+        """
+        <div id="title-block">
+            <h1>🎓 TCE Chat Assistant</h1>
+            <p>Ask me anything about Thiagarajar College of Engineering!</p>
+        </div>
+        """
+    )
+    gr.ChatInterface(
+        fn=respond,
+        chatbot=gr.Chatbot(height=500, avatar_images=("user.png", "tcelogo.png")),
+        textbox=gr.Textbox(placeholder="What do you want to know about TCE?"),
+        examples=[
+            "Who is the founder of TCE?",
+            "Tell me about the history of TCE",
+            "What undergraduate programmes does TCE offer?",
+            "What is the placement record at TCE?",
+        ],
+    )
+
+if __name__ == "__main__":
+    demo.launch()
