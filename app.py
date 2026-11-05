@@ -4,7 +4,8 @@ import gradio as gr
 from dotenv import load_dotenv
 from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.embeddings import Embeddings
+from fastembed import TextEmbedding
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -17,8 +18,19 @@ INDEX_NAME = "tce-website-data"
 if not all([PINECONE_API_KEY, GOOGLE_API_KEY]):
     raise ValueError("Please set PINECONE_API_KEY and GOOGLE_API_KEY as environment variables / Space secrets.")
 
+class FastEmbedMiniLM(Embeddings):
+    """all-MiniLM-L6-v2 via ONNX (fastembed) - same vectors as sentence-transformers, without torch."""
+    def __init__(self):
+        self.model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+
+    def embed_documents(self, texts):
+        return [v.tolist() for v in self.model.embed(texts)]
+
+    def embed_query(self, text):
+        return self.embed_documents([text])[0]
+
 # --- Load Vectorstore and LLM (runs once at startup) ---
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = FastEmbedMiniLM()
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(INDEX_NAME)
 vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
@@ -112,7 +124,7 @@ custom_css = bg_css + """
 """
 
 # --- Build the Gradio app ---
-with gr.Blocks(css=custom_css, title="TCE Chat Assistant") as demo:
+with gr.Blocks(title="TCE Chat Assistant") as demo:
     gr.HTML(
         """
         <div id="title-block">
@@ -134,4 +146,4 @@ with gr.Blocks(css=custom_css, title="TCE Chat Assistant") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css=custom_css, server_name="0.0.0.0", server_port=int(os.getenv("PORT", 7860)))
